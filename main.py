@@ -9,7 +9,7 @@ YELLOW = (255, 255, 0)
 SKY_BLUE = (95, 165, 228)
 WIDTH = 800
 HEIGHT = 600
-TITLE = "<You're title here>"
+TITLE = "Shinning Over You"
 
 
 def main():
