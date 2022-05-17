@@ -11,7 +11,8 @@ YELLOW = (255, 255, 0)
 SKY_BLUE = (95, 165, 228)
 WIDTH = 1280
 HEIGHT = 720
-ENEMY_VELOCITY = 0
+ENEMY_VELOCITY = 5
+PLAYER_VELOCITY = 10
 TITLE = "Shinning Over You"
 
 # Create a background
@@ -30,18 +31,18 @@ class Sun(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
 
         # Location
-        self.rect.center = (0, WIDTH // 2)
+        self.rect.center = (WIDTH / 2, 0)
 
         # Sun velocity
-        self.xvel = 10
+        self.xvel = PLAYER_VELOCITY
 
         self.player = player
 
     def update(self):
         # Move with the player in the x direction
-        if self.rect.x < self.player.rect.centerx:
+        if self.rect.centerx < self.player.rect.centerx:
             self.rect.x += self.xvel
-        if self.rect.x > self.player.rect.centerx:
+        if self.rect.centerx > self.player.rect.centerx:
             self.rect.x -= self.xvel
 
 # Create a player (rays) class
@@ -51,7 +52,7 @@ class Player(pygame.sprite.Sprite):
 
         # Image
         self.image = pygame.image.load("./assets/rays.png")
-        self.image = pygame.transform.scale(self.image, (self.image.get_width(), HEIGHT))
+        self.image = pygame.transform.scale(self.image, (self.image.get_width() / 2, HEIGHT))
 
         # Rect
         self.rect = self.image.get_rect()
@@ -67,10 +68,10 @@ class Player(pygame.sprite.Sprite):
         self.xvel = 0
 
     def move_left(self):
-        self.xvel = -10
+        self.xvel = -PLAYER_VELOCITY
 
     def move_right(self):
-        self.xvel = 10
+        self.xvel = PLAYER_VELOCITY
 
     def stop(self):
         self.xvel = 0
@@ -79,6 +80,15 @@ class Player(pygame.sprite.Sprite):
     def update(self):
         # According to player movements
         self.rect.x += self.xvel
+
+        if self.rect.right > WIDTH:
+            self.rect.right = WIDTH
+        if self.rect.left < 0:
+            self.rect.left = 0
+        if self.rect.top < 0:
+            self.rect.top = 0
+        if self.rect.bottom > HEIGHT:
+            self.rect.bottom = HEIGHT
 
 
 # Create enemy class
@@ -95,32 +105,31 @@ class Enemy(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
 
         # Location
-        self.rect.center = random_coords()
+        self.rect.center = random.choice([
+            (random.randrange(-100, 0), random.randrange(0, HEIGHT)),
+            (random.randrange(WIDTH, WIDTH + 100), random.randrange(0, HEIGHT))
+        ])
 
         # Enemy velocity
-        self.xvel = 2
-        self.yvel = 2
+        self.xvel = ENEMY_VELOCITY
+        self.yvel = ENEMY_VELOCITY
 
         self.protect = protect
 
     def update(self):
-        # Move closer to the protect in the x direction
-        if self.rect.x < self.protect.rect.centerx:
-            self.rect.x += self.xvel
-        if self.rect.x > self.protect.rect.centerx:
-            self.rect.x -= self.xvel
+        if random.random() >= 0.2:
+            # Move closer to the protect in the x direction
+            if self.rect.x < self.protect.rect.centerx:
+                self.rect.x += self.xvel
+            if self.rect.x > self.protect.rect.centerx:
+                self.rect.x -= self.xvel
+        else:
+            # Move closer to the protect in the y direction
+            if self.rect.y < self.protect.rect.centery:
+                self.rect.y += self.yvel
+            if self.rect.y > self.protect.rect.centery:
+                self.rect.y -= self.yvel
 
-        # Move closer to the protect in the y direction
-        if self.rect.y < self.protect.rect.centery:
-            self.rect.y += self.yvel
-        if self.rect.y > self.protect.rect.centery:
-            self.rect.y -= self.yvel
-
-
-def random_coords() -> list:
-    """Returns a random x, y coordinate between
-    0 to WIDTH and 0 to HEIGHT respectively"""
-    return random.randrange(0, WIDTH), random.randrange(0, HEIGHT)
 
 # Create protect class
 class Protect(pygame.sprite.Sprite):
@@ -152,6 +161,14 @@ def main():
     done = False
     clock = pygame.time.Clock()
     num_enemy = 20
+    score = 0
+    health = 10
+
+    hit_sound = pygame.mixer.Sound("./assets/hit_sound.ogg")
+    hit_sound.set_volume(0.01)
+    losing_sound = pygame.mixer.Sound("./assets/Losing_sound.ogg")
+    background_sound = pygame.mixer.Sound("./assets/background_music.ogg")
+    attacked_sound = pygame.mixer.Sound("./assets/attacked_sound.ogg")
 
     # Sprite groups
     all_sprites_group = pygame.sprite.Group()
@@ -174,10 +191,9 @@ def main():
     all_sprites_group.add(player)
 
     # Add sun to all_sprites_group
-    sun = Sun()
+    sun = Sun(player)
     all_sprites_group.add(sun)
-
-    score = 0
+    background_sound.play()
 
     # ----- MAIN LOOP
     while not done:
@@ -221,14 +237,31 @@ def main():
             dokill = True
         )
 
+        # Iterate through all collided enemy with player and replace new enemies
+        for enemy in collided_enemy:
+            enemy = Enemy(protect)
+            all_sprites_group.add(enemy)
+            enemy_sprites_group.add(enemy)
+
+        # Iterate through all collided enemy with player and replace new enemies
+        for enemy in attacked_enemy:
+            enemy = Enemy(protect)
+            all_sprites_group.add(enemy)
+            enemy_sprites_group.add(enemy)
+
         # Add one to score if player and enemy collided
         if len(collided_enemy) > 0:
             score += 1
 
+            # Play sound when the player and enemy collide
+            attacked_sound.play()
+
         # Remove one to health if protect and enemy collided
-        health = 3
         if len(attacked_enemy) > 0:
             health -= 1
+
+            # Play sound when the enemy and protect collide
+            hit_sound.play()
 
         # ----- RENDER
         screen.fill(BLACK)
@@ -246,6 +279,15 @@ def main():
         # Render health
         health_sirf = default_font.render(f"Health: {health}", True, WHITE)
         screen.blit(health_sirf, (100, 10))
+        if health <= 0:
+            ending_credit = default_font.render(f"""You have failed to protect the life of Mr.Cat.
+            You score is: {score}, please try again in your next life. Goodbye!""",
+            True,
+            WHITE)
+            screen.blit(ending_credit, (225, HEIGHT // 2))
+            pygame.display.flip()
+            pygame.time.wait(5000)
+            done = True
 
         # ----- UPDATE DISPLAY
         pygame.display.flip()
