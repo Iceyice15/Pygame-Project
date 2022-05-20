@@ -2,6 +2,7 @@
 
 import pygame
 import random
+import math
 
 # ----- CONSTANTS
 BLACK = (0, 0, 0)
@@ -12,6 +13,7 @@ WIDTH = 1280
 HEIGHT = 720
 ENEMY_VELOCITY = 5
 PLAYER_VELOCITY = 10
+POWERUP_VEOLCITY = 3
 TITLE = "Shinning Upon You"
 
 # Create a background house
@@ -30,7 +32,7 @@ class Sun(pygame.sprite.Sprite):
         # Rect
         self.rect = self.image.get_rect()
 
-        # Location
+        # Start sun location
         self.rect.center = (WIDTH / 2, 0)
 
         # Sun velocity
@@ -106,7 +108,7 @@ class Enemy(pygame.sprite.Sprite):
         # Rect
         self.rect = self.image.get_rect()
 
-        # Location
+        # Location in random on the sides of the screen
         self.rect.center = random.choice([
             (random.randrange(-100, 0), random.randrange(0, HEIGHT)),
             (random.randrange(WIDTH, WIDTH + 100), random.randrange(0, HEIGHT))
@@ -137,7 +139,7 @@ class Enemy(pygame.sprite.Sprite):
 
 # Create protect class
 class Protect(pygame.sprite.Sprite):
-    def __init__(self, player):
+    def __init__(self):
         super().__init__()
 
         # Images
@@ -166,8 +168,50 @@ class Protect(pygame.sprite.Sprite):
         # Location
         self.rect.center = (WIDTH / 2,  HEIGHT - self.image.get_height() + 65)
 
-        # Call the added parameter
-        self.player = player
+
+# Create power-up class
+class Powerup(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+
+         # Image
+        self.image = pygame.image.load("./assets/powerup.png")
+        self.image = pygame.transform.scale(self.image, (80, 80))
+
+        # Rect
+        self.rect = self.image.get_rect()
+
+        # Random location from the sides of the screen
+        self.rect.center = random.choice([
+            (random.randrange(-100, 0), random.randrange(0, HEIGHT)),
+            (random.randrange(WIDTH, WIDTH + 100), random.randrange(0, HEIGHT))
+        ])
+
+        # Powerup velocity
+        self.xvel = POWERUP_VEOLCITY
+        self.yvel = POWERUP_VEOLCITY
+
+        # Cooldown 
+        self.cooldown = 0
+
+    def update(self):
+        # Move according to powerup's x and y velocity 
+        self.rect.x += self.xvel
+        self.rect.y += self.yvel
+
+        # Prevent powerups from leaving the screen and bounce them around
+        if self.rect.right > WIDTH:
+            self.rect.right = WIDTH
+            self.xvel *= -1 
+        if self.rect.left < 0:
+            self.rect.left = 0
+            self.xvel *= -1
+        if self.rect.top < 0:
+            self.rect.top = 0
+            self.yvel *= -1
+        if self.rect.bottom > HEIGHT:
+            self.rect.bottom = HEIGHT
+            self.yvel *= -1
 
 
 def main():
@@ -193,7 +237,9 @@ def main():
     background_sound = pygame.mixer.Sound("./assets/background_music.ogg")
     background_sound.set_volume(1)
     attacked_sound = pygame.mixer.Sound("./assets/attacked_sound.ogg")
-    attacked_sound.set_volume(0.5)
+    attacked_sound.set_volume(0.30)
+    eating_sound = pygame.mixer.Sound("./assets/eating_sound.ogg")
+    eating_sound.set_volume(1)
 
     # Play background sound
     background_sound.play()
@@ -202,13 +248,14 @@ def main():
     all_sprites_group = pygame.sprite.Group()
     enemy_sprites_group = pygame.sprite.Group()
     protect_sprites_group = pygame.sprite.Group()
+    powerup_sprites_group = pygame.sprite.Group()
 
     # Add player to all_sprites_group
     player = Player()
     all_sprites_group.add(player)
 
     # Add protect to all_sprites_group and protect_sprites_group
-    protect = Protect(player)
+    protect = Protect()
     all_sprites_group.add(protect)
     protect_sprites_group.add(protect)
 
@@ -216,11 +263,16 @@ def main():
     sun = Sun(player)
     all_sprites_group.add(sun)
 
+    # Add powerup to all_sprites_group and powerup_sprites_group
+    powerup = Powerup()
+    all_sprites_group.add(powerup)
+    powerup_sprites_group.add(powerup)
+
     # Create enemy sprite group
     for i in range(num_enemy):
         enemy = Enemy(protect)
 
-        # Add enemy to both list: all_sprites_group and enemy_sprites_group
+        # Add enemy to all_sprites_group and enemy_sprites_group
         all_sprites_group.add(enemy)
         enemy_sprites_group.add(enemy)
 
@@ -267,9 +319,19 @@ def main():
             dokill=False
         )
 
-        # Create a happy protect face when protect collided with player
-        # Create a sad face when health goes below 5
-        if health <= 5:
+        # Collision between player and powerup sprites
+        powerups = pygame.sprite.spritecollide(
+            player,
+            powerup_sprites_group,
+            dokill=True
+        )
+
+        # Create a happy protect face when protect collided with player and when there is a high score
+        # Create a sad face when health goes below or equal 5
+        # Show a regular face otherwise
+        if score <= 99:
+            protect.image = protect.happy_image
+        elif health <= 5:
             protect.image = protect.sad_image
         elif happy_protect:
             protect.image = protect.happy_image
@@ -287,7 +349,7 @@ def main():
             enemy = Enemy(protect)
             all_sprites_group.add(enemy)
             enemy_sprites_group.add(enemy)
-
+  
         # Add one to score if player and enemy collided
         if len(collided_enemy) > 0:
             score += 1
@@ -299,11 +361,33 @@ def main():
         if len(attacked_enemy) > 0:
             health -= 1
 
-            # Play sound when the enemy and protect collide and a different sound if health goes below 5
+            # Play sound when the enemy and protect collide
+            # Play a different sound when the protect health is lower or equal to 5
             if health >= 5:
                 hit_sound.play()
             else:
                 losing_sound.play()
+        
+        # Add one to cooldown time if it's cooldown
+        if powerup.cooldown <= 500:
+            powerup.cooldown += 1
+
+        # Create a powerup in one side of the screen when cooldown is over
+        if powerup.cooldown == 500:
+                powerup.rect.center = random.choice([
+            (random.randrange(-100, 0), random.randrange(0, HEIGHT)),
+            (random.randrange(WIDTH, WIDTH + 100), random.randrange(0, HEIGHT))
+        ])
+                all_sprites_group.add(powerup)
+                powerup_sprites_group.add(powerup)
+
+        # Add one to health if player and powerup collide
+        # Rest the cooldown
+        # Play sound when player and powerup collide
+        if len(powerups):
+            powerup.cooldown = 0
+            health += 1
+            eating_sound.play()
 
         # ----- RENDER
         screen.fill(BLACK)
@@ -322,7 +406,7 @@ def main():
         health_sirf = default_font.render(f"Health: {health}", True, WHITE)
         screen.blit(health_sirf, (200, 10))
 
-        # Render lose screen
+        # Render lose screen and end game
         if health <= 0:
             ending_credit = default_font.render("You have failed to protect the life of Mr.Cat. "
                                                 f"You score is: {score}. Please try again in your next life. Goodbye!",
@@ -334,7 +418,7 @@ def main():
             pygame.time.wait(5000)
             done = True
 
-        # Render Win screen
+        # Render win screen and end game
         if score == 100:
             winning_credit = default_font.render("You have successfully protect Mr.Cat."
                                                  f" You score is: {score}."
